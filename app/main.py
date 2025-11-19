@@ -46,6 +46,24 @@ class UserResponse(UserCreate):
     model_config = {"from_attributes": True}
 
 
+class Embedding(Base):
+    __tablename__ = "embeddings"
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, index=True)
+    user_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("users.id"))
+    embedding_vector = sqlalchemy.Column(sqlalchemy.BLOB())
+
+
+class EmbeddingCreate(BaseModel):
+    user_id: int
+    embedding_vector: list[float]
+
+
+class EmbeddingResponse(EmbeddingCreate):
+    id: int
+
+    model_config = {"from_attributes": True}
+
+
 app = FastAPI()
 
 
@@ -70,12 +88,32 @@ def create_user(
     return db_user
 
 
+@app.post("/embeddings/", response_model=EmbeddingResponse)
+def create_embedding(
+    embedding: EmbeddingCreate,
+    db: Session = Depends(get_db),
+):
+    db_embedding = Embedding(**embedding.model_dump())
+    db.add(db_embedding)
+    db.commit()
+    db.refresh(db_embedding)
+    return db_embedding
+
+
 @app.get("/users/{user_id}", response_model=UserResponse)
 def read_user(user_id: int, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.id == user_id).first()
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
+
+
+@app.get("/embeddings/{embedding_id}", response_model=EmbeddingResponse)
+def read_embedding(embedding_id: int, db: Session = Depends(get_db)):
+    db_embedding = db.query(Embedding).filter(Embedding.id == embedding_id).first()
+    if db_embedding is None:
+        raise HTTPException(status_code=404, detail="Embedding not found")
+    return db_embedding
 
 
 @app.get("/users/", response_model=list[UserResponse])
@@ -86,6 +124,16 @@ def read_users(
 ):
     users = db.query(User).offset(skip).limit(limit).all()
     return users
+
+
+@app.get("/embeddings/", response_model=list[EmbeddingResponse])
+def read_embeddings(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    embeddings = db.query(Embedding).offset(skip).limit(limit).all()
+    return embeddings
 
 
 @app.put("/users/{user_id}", response_model=UserResponse)
@@ -104,6 +152,22 @@ def update_user(
     return db_user
 
 
+@app.put("/embeddings/{embedding_id}", response_model=EmbeddingResponse)
+def update_embedding(
+    embedding_id: int,
+    embedding: EmbeddingCreate,
+    db: Session = Depends(get_db),
+):
+    db_embedding = db.query(Embedding).filter(Embedding.id == embedding_id).first()
+    if db_embedding is None:
+        raise HTTPException(status_code=404, detail="Embedding not found")
+    for var, value in vars(embedding).items():
+        setattr(db_embedding, var, value) if value else None
+    db.commit()
+    db.refresh(db_embedding)
+    return db_embedding
+
+
 @app.delete("/users/{user_id}", response_model=UserResponse)
 def delete_user(user_id: int, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.id == user_id).first()
@@ -112,6 +176,16 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.delete(db_user)
     db.commit()
     return db_user
+
+
+@app.delete("/embeddings/{embedding_id}", response_model=EmbeddingResponse)
+def delete_embedding(embedding_id: int, db: Session = Depends(get_db)):
+    db_embedding = db.query(Embedding).filter(Embedding.id == embedding_id).first()
+    if db_embedding is None:
+        raise HTTPException(status_code=404, detail="Embedding not found")
+    db.delete(db_embedding)
+    db.commit()
+    return db_embedding
 
 
 @app.get("/")
